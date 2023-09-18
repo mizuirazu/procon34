@@ -95,72 +95,50 @@ void GetInfo(situa& situa);//毎ターン始めに試合状況を得る
 void solver_dijkstra(situa& Situa, Grid<int32>& Break, Grid<int32>& Create, JSON& json);//Dijkstra法と順列全探索で求める
 void score_OpenedBox(situa& situa);
 
-//VisualizeとGUIのクリック判定を行っている スイッチとしてbool変数が宣言されている
-bool UIArea = 1, UIPrio = 1, UICraft = 1, UIBuilding = 1, UIbreaking = 1, UIerase = 0;//Area=陣地、Prio=優先、Craft=職人、BIlding=建物
+bool UIerase = 0,UIbreaktarget=0,UIcreatetarget=0;//目標の操作
 void Visualizer(situa& situa, Array<Texture>& emoji, Grid<int>& breakUI, Grid<int>& craftUI, Font& ui_font) {
 	double delta_alp_sin = Periodic::Sine0_1(1.3s);
-
 
 	Rect{ 0,0, 25 * 25 + 24, 25 * 25 + 24 }.draw(Palette::Darkturquoise.withAlpha(255));//背景
 
 	//各種ボタンの宣言と描画
-	Rect Area = Rect{ 660, 590, 70, 50 }.draw((UIArea) ? Palette::White : Palette::Gray);
-	ui_font(U"陣地").draw(20, Rect{ 675, 600, 70, 50 }, (UIArea) ? Palette::Gray : Palette::White);
+	Rect erase_target = Rect{ 660 + 160 , 330, 150, 150 }.drawShadow(Vec2{7,7},5,0).draw((UIerase) ? Palette::Black : Palette::White);
+	ui_font((UIerase) ? U"目標削除\n  Space" : U"目標追加\n  Space").drawAt(30, erase_target.center(), ((UIerase) ? Palette::White : Palette::Black));
 
-	Rect Priority = Rect{ 660 + 80, 590, 70, 50 }.draw((UIPrio) ? Palette::White : Palette::Gray);
-	ui_font(U"優先度").draw(20, Rect{ 665 + 80, 600, 70, 50 }, (UIPrio) ? Palette::Gray : Palette::White);
+	Rect break_target = Rect{ 660 , 330, 150, 150 }.drawShadow(Vec2{ 7,7 }, 5, 0).draw((UIbreaktarget) ? Palette::Black : Palette::White);
+	ui_font(U"破壊目標\n自動追加").drawAt(30, break_target.center(), ((UIbreaktarget) ? Palette::White : Palette::Black));
+	//敵の開放された陣地を埋める
+	Rect create_target = Rect{ 660 , 330+160, 150, 150 }.drawShadow(Vec2{ 7,7 }, 5, 0).draw((UIcreatetarget) ? Palette::Black : Palette::White);
+	ui_font(U"建築目標\n自動追加").drawAt(30, create_target.center(), ((UIcreatetarget) ? Palette::White : Palette::Black));
 
-	Rect Crafter = Rect{ 660 + 160, 590, 70, 50 }.draw((UICraft) ? Palette::White : Palette::Gray);
-	ui_font(U"建築士").draw(20, Rect{ 665 + 160, 600, 70, 50 }, (UICraft) ? Palette::Gray : Palette::White);
-
-	Rect Building = Rect{ 660 + 240, 590, 70, 50 }.draw((UIBuilding) ? Palette::White : Palette::Gray);
-	ui_font(U"構造物").draw(20, Rect{ 665 + 240, 600, 70, 50 }, (UIBuilding) ? Palette::Gray : Palette::White);
-
-	Rect breaking_constr = Rect{ 660 , 400 + 110, 150, 70 }.draw((!UIbreaking) ? Palette::Gray : Palette::White);
-	ui_font((UIbreaking) ? U"建築" : U"破壊").draw(25, Rect{ 660 + 50, 418 + 110, 70, 50 }, Palette::Black);
-	Rect erase_pri = Rect{ 660 + 160 , 400 + 110, 150, 70 }.draw((UIerase) ? Palette::Gray : Palette::White);
-	ui_font((UIerase) ? U"優先度削除" : U"優先度追加").draw(25, Rect{ 660 + 172, 418 + 110, 190, 50 }, Palette::Black);
-
-	//各種ボタンの入力判定
-	if (Area.leftClicked()) {
-		UIArea = !UIArea;
-	}
-	if (Priority.leftClicked()) {
-		UIPrio = !UIPrio;
-	}
-	if (Crafter.leftClicked()) {
-		UICraft = !UICraft;
-	}
-	if (Building.leftClicked()) {
-		UIBuilding = !UIBuilding;
-	}
-
-	if (erase_pri.leftClicked() || KeySpace.down()) {
+	Rect description = Rect{ 660+160 , 330 + 160, 150, 150 }.drawShadow(Vec2{ 7,7 }, 5, 0).draw(Palette::Darkgray);
+	ui_font(U"MouseL\n=建築目標\nMouseR\n=破壊目標\nTab=職人番号").drawAt(20, description.center(), Palette::White);
+	if (erase_target.leftClicked() || KeySpace.down()) {
 		UIerase = !UIerase;
 	}
-	if (breaking_constr.leftClicked() || MouseR.down()) {
-		UIbreaking = !UIbreaking;
+	if (break_target.leftClicked()) {
+		UIbreaktarget = !UIbreaktarget;
+	}
+	if (create_target.leftClicked()) {
+		UIcreatetarget = !UIcreatetarget;
 	}
 
 	//GUIによる優先度追加
 	if (where().x >= 0 && where().x < current.w && where().y >= 0 && where().y < current.h) {
-		if (UIbreaking == 1) {
-			if (!UIerase && MouseL.down()) {
-				if(situa.boxes[where().y][where().x].bld==None)
+		if (!UIerase && MouseL.down()) {
+			if (situa.boxes[where().y][where().x].bld == None)
 				craftUI[where().y][where().x] = 255;
-			}
-			else if (UIerase && MouseL.down()) {
-				craftUI[where().y][where().x] = 0;
-			}
 		}
-		if (UIbreaking == 0) {
-			if (!UIerase && MouseL.down()) {
-				if (situa.boxes[where().y][where().x].bld == ownWall|| situa.boxes[where().y][where().x].bld == eneWall)
+		else if (UIerase && MouseL.down()) {
+			craftUI[where().y][where().x] = 0;
+		}
+		if (!UIerase && MouseR.down()) {
+			if (situa.boxes[where().y][where().x].bld == ownWall || situa.boxes[where().y][where().x].bld == eneWall)
 				breakUI[where().y][where().x] = 255;
-			}
-			else if (UIerase && MouseL.down()) {
-				breakUI[where().y][where().x] = 0;
-			}
+		}
+		else if (UIerase && MouseR.down()) {
+			breakUI[where().y][where().x] = 0;
+
 		}
 	}
 
@@ -171,81 +149,75 @@ void Visualizer(situa& situa, Array<Texture>& emoji, Grid<int>& breakUI, Grid<in
 	for (int i = 1; i <= current.h; i++) {
 		for (int j = 1; j <= current.w; j++) {
 
-			auto color = Palette::Blue;
+			Color color = Palette::Blue;
 			int drawx = ippen * j;
 			int drawy = ippen * i;
 			box inbox = situa.boxes[i - 1][j - 1];
 
-			if (!inbox.isPond) {
-				int alp = 140;
-				if (!inbox.own && !inbox.ene || !UIArea)color = Palette::Darkgreen, alp = 255;
-				if (!inbox.own && inbox.ene && UIArea)color = Palette::Red;
-				if (inbox.own && !inbox.ene && UIArea)color = Palette::Blue;
-				if (inbox.own && inbox.ene && UIArea)color = Palette::Purple;
-				if (inbox.isClose && UIArea)alp = 180;
-				Rect{ Arg::center(drawx,drawy),size,size }.draw(Palette::White);
+			//陣地の描画
+			if (inbox.isPond) {
+				int alp = delta_alp_sin * 120;
+				int bg_white_alpha = 255 * delta_alp_sin;
+				if (!inbox.own && !inbox.ene)alp = 0, bg_white_alpha = 0;
+				if (!inbox.own && inbox.ene)color = Palette::Red;
+				if (inbox.own && !inbox.ene)color = Palette::Blue;
+				if (inbox.own && inbox.ene)color = Palette::Purple;
+				if (inbox.isClose)alp = delta_alp_sin * 180;
+				Rect{ Arg::center(drawx,drawy),size,size }.draw(Palette::White.withAlpha(bg_white_alpha));
 				Rect{ Arg::center(drawx,drawy),size,size }.draw(color.withAlpha(alp));
 			}
 			else {
-				int alp = delta_alp_sin*120;
-				int bg_white_alpha = 255 * delta_alp_sin;
-				if (!inbox.own && !inbox.ene || !UIArea)alp = 0,bg_white_alpha=0;
-				if (!inbox.own && inbox.ene && UIArea)color = Palette::Red;
-				if (inbox.own && !inbox.ene && UIArea)color = Palette::Blue;
-				if (inbox.own && inbox.ene && UIArea)color = Palette::Purple;
-				if (inbox.isClose && UIArea)alp = delta_alp_sin*180;
-				Rect{ Arg::center(drawx,drawy),size,size }.draw(Palette::White.withAlpha(bg_white_alpha));
+				int alp = 140;
+				if (!inbox.own && !inbox.ene)color = Color{75,100,75}, alp = 255;
+				if (!inbox.own && inbox.ene)color = Palette::Red;
+				if (inbox.own && !inbox.ene)color = Palette::Blue;
+				if (inbox.own && inbox.ene)color = Palette::Purple;
+				if (inbox.isClose)alp = 180;
+				Rect{ Arg::center(drawx,drawy),size,size }.draw(Palette::White);
 				Rect{ Arg::center(drawx,drawy),size,size }.draw(color.withAlpha(alp));
+			}
 
-			}
-			if (UIBuilding) {
-				if (situa.boxes[i - 1][j - 1].bld == eneWall)
-					emoji[4].scaled(0.16 * asp).drawAt(ippen * j, ippen * i);
-				if (situa.boxes[i - 1][j - 1].bld == ownWall)
-					emoji[3].scaled(0.16 * asp).drawAt(ippen * j, ippen * i);//味方は0,敵は1,城は2,無は3
-				if (situa.boxes[i - 1][j - 1].bld == castle)
-					emoji[5].scaled(0.16 * asp).drawAt(ippen * j, ippen * i);//味方は0,敵は1,城は2,無は3
-			}
-			if (UIPrio) {
-				if (!UIbreaking) {
-					double alp = breakUI[i - 1][j - 1];
-					double r = sqrt(ippen * ippen) / 2;
-					double width = ippen / 5.0;
-					Shape2D::Cross(r, width, Vec2(ippen * j, ippen * i)).draw(Palette::Black.withAlpha(alp));
-					alp = craftUI[i - 1][j - 1];
-					r = ippen / 2 - 3;
-					width = ippen / 5.0;
-					Shape2D::Plus(r, width, Vec2(ippen * j, ippen * i)).draw(Palette::White.withAlpha(alp / 7));
-				}
-				else {
-					double alp = craftUI[i - 1][j - 1];
-					double r = ippen / 2 - 3;
-					double width = ippen / 5.0;
-					Shape2D::Plus(r, width, Vec2(ippen * j, ippen * i)).draw(Palette::White.withAlpha(alp));
-					alp = breakUI[i - 1][j - 1];
-					r = sqrt(ippen * ippen) / 2;
-					width = ippen / 5.0;
-					Shape2D::Cross(r, width, Vec2(ippen * j, ippen * i)).draw(Palette::Black.withAlpha(alp / 7));
-				}
-			}
+
+			//壁の描画
+			if (situa.boxes[i - 1][j - 1].bld == eneWall)
+				emoji[4].scaled(0.16 * asp).drawAt(ippen * j, ippen * i);
+			if (situa.boxes[i - 1][j - 1].bld == ownWall)
+				emoji[3].scaled(0.16 * asp).drawAt(ippen * j, ippen * i);//味方は0,敵は1,城は2,無は3
+			if (situa.boxes[i - 1][j - 1].bld == castle)
+				emoji[5].scaled(0.16 * asp).drawAt(ippen * j, ippen * i);//味方は0,敵は1,城は2,無は3
+
+
+			//目標の描画
+			int alp = breakUI[i - 1][j - 1];
+			double r = sqrt(ippen * ippen) / 2;
+			double width = ippen / 5.0;
+			Shape2D::Cross(r, width, Vec2(ippen * j, ippen * i)).draw(Palette::Black.withAlpha(alp));
+			alp = craftUI[i - 1][j - 1];
+			r = ippen / 2 - 3;
+			width = ippen / 5.0;
+			Shape2D::Plus(r, width, Vec2(ippen * j, ippen * i)).draw(Palette::White.withAlpha(alp));
 		}
 	}
-	//職人と味方の番号の描画 Tabで確認可能
-	if (UICraft) {
-		for (auto c : situa.enes) {
-			int cy = c.y + 1, cx = c.x + 1;
-			emoji[0].scaled(0.16 * asp).drawAt(ippen * cx, ippen * cy);
-		}
-		for (int i = 0; i < current.mason; i++) {
-			int cy = situa.owns[i].y + 1, cx = situa.owns[i].x + 1;
-			emoji[1].scaled(0.16 * asp).drawAt(ippen * cx, ippen * cy);
 
-			if (KeyTab.pressed())
-			{
-				Rect{ Arg::center(ippen * cx, ippen * cy),size,size }.draw(Palette::White.withAlpha(80));
-				ui_font(i + 1).drawAt(0.8 * ippen, { ippen * cx, ippen * cy }, Palette::Black);
-			}
+	//職人と味方の番号の描画 Tabで確認可能
+	for (int i = 0; i < current.mason; i++) {
+		int cy = situa.enes[i].y + 1, cx = situa.enes[i].x + 1;
+		emoji[0].scaled(0.16 * asp).drawAt(ippen * cx, ippen * cy);
+
+		if (KeyTab.pressed())
+		{
+			Rect{ Arg::center(ippen * cx, ippen * cy),size,size }.draw(Palette::Black.withAlpha(80));
+			ui_font(i + 1).drawAt(0.8 * ippen, { ippen * cx, ippen * cy }, Palette::White);
 		}
+		cy = situa.owns[i].y + 1, cx = situa.owns[i].x + 1;
+		emoji[1].scaled(0.16 * asp).drawAt(ippen * cx, ippen * cy);
+
+		if (KeyTab.pressed())
+		{
+			Rect{ Arg::center(ippen * cx, ippen * cy),size,size }.draw(Palette::White.withAlpha(80));
+			ui_font(i + 1).drawAt(0.8 * ippen, { ippen * cx, ippen * cy }, Palette::Black);
+		}
+
 	}
 	//GUI入力中どこがクリックされるのか表示しておく
 	if (OK(where()))
@@ -259,11 +231,11 @@ void Visualizer(situa& situa, Array<Texture>& emoji, Grid<int>& breakUI, Grid<in
 	Rect wall_simbol = Rect{ 660 + 240, 20, 70, 50 };
 	emoji[3].scaled(0.5).drawAt(wall_simbol.center());
 
-	Rect Area_simbol0 = Rect{ 660 + 160, 0-2, 70, 50 }; Rect Area_simbol1 = Rect{ 660 + 180+2, 20, 70, 50 };
-	Rect Area_simbol2 = Rect{ 660 + 140-2, 20, 70, 50 }; Rect Area_simbol3 = Rect{ 660 + 160, 40+2, 70, 50 };
-	emoji[4].scaled(0.5/3).drawAt(Area_simbol0.center());emoji[4].scaled(0.5 / 3).drawAt(Area_simbol1.center());
-	emoji[4].scaled(0.5 / 3).drawAt(Area_simbol2.center());emoji[4].scaled(0.5 / 3).drawAt(Area_simbol3.center());
-	Rect{ 660 + 185,35,20,20 }.draw(Palette::White); Rect{ 660+185,35,20,20 }.draw(Palette::Red.withAlpha(180));
+	Rect Area_simbol0 = Rect{ 660 + 160, 0 - 2, 70, 50 }; Rect Area_simbol1 = Rect{ 660 + 180 + 2, 20, 70, 50 };
+	Rect Area_simbol2 = Rect{ 660 + 140 - 2, 20, 70, 50 }; Rect Area_simbol3 = Rect{ 660 + 160, 40 + 2, 70, 50 };
+	emoji[4].scaled(0.5 / 3).drawAt(Area_simbol0.center()); emoji[4].scaled(0.5 / 3).drawAt(Area_simbol1.center());
+	emoji[4].scaled(0.5 / 3).drawAt(Area_simbol2.center()); emoji[4].scaled(0.5 / 3).drawAt(Area_simbol3.center());
+	Rect{ 660 + 185,35,20,20 }.draw(Palette::White); Rect{ 660 + 185,35,20,20 }.draw(Palette::Red.withAlpha(180));
 
 	Rect castle_simbol = Rect{ 660 + 80, 20, 70, 50 };
 	emoji[5].scaled(0.5).drawAt(castle_simbol.center());
@@ -278,29 +250,29 @@ void Visualizer(situa& situa, Array<Texture>& emoji, Grid<int>& breakUI, Grid<in
 	Rect own_castle = Rect{ 660 + 80, 90, 70, 50 }.draw(Palette::Darkcyan);
 	ui_font(current.num_owncastle).drawAt(20, own_castle.center(), Palette::White);
 	Rect own_point = Rect{ 660, 90, 70, 50 }.draw(Palette::Darkcyan);
-	const int num_own_point= current.num_ownwall + 3 * current.num_ownarea + 10 * current.num_owncastle;
+	const int num_own_point = current.num_ownwall + 3 * current.num_ownarea + 10 * current.num_owncastle;
 	ui_font(num_own_point).drawAt(20, own_point.center(), Palette::White);
 
-	Rect ene_wall = Rect{ 660+240, 150, 70, 50 }.draw(Palette::Darkorange);
+	Rect ene_wall = Rect{ 660 + 240, 150, 70, 50 }.draw(Palette::Darkorange);
 	ui_font(current.num_enewall).drawAt(20, ene_wall.center(), Palette::White);
-	Rect ene_area = Rect{ 660+160, 150, 70, 50 }.draw(Palette::Darkorange);
+	Rect ene_area = Rect{ 660 + 160, 150, 70, 50 }.draw(Palette::Darkorange);
 	ui_font(current.num_enearea).drawAt(20, ene_area.center(), Palette::White);
-	Rect ene_castle = Rect{ 660+80, 150, 70, 50 }.draw(Palette::Darkorange);
+	Rect ene_castle = Rect{ 660 + 80, 150, 70, 50 }.draw(Palette::Darkorange);
 	ui_font(current.num_enecastle).drawAt(20, ene_castle.center(), Palette::White);
 	Rect ene_point = Rect{ 660, 150, 70, 50 }.draw(Palette::Darkorange);
 	const int num_ene_point = current.num_enewall + 3 * current.num_enearea + 10 * current.num_enecastle;
 	ui_font(num_ene_point).drawAt(20, ene_point.center(), Palette::White);
 
-	Rect  advantage_rect= Rect{ 660, 210, 310, 50 }.draw(Palette::Darkorange);
-	if(num_ene_point+num_own_point!=0)
-		Rect{ 660, 210, 310 * num_own_point/(num_ene_point+num_own_point), 50}.draw(Palette::Darkcyan);
+	Rect  advantage_rect = Rect{ 660, 210, 310, 50 }.draw(Palette::Darkorange);
+	if (num_ene_point + num_own_point != 0)
+		Rect{ 660, 210, 310 * num_own_point / (num_ene_point + num_own_point), 50 }.draw(Palette::Darkcyan);
 	else
 		Rect{ 660, 210, 155, 50 }.draw(Palette::Darkcyan);
 	ui_font(U"ADVANTAGE {} : {}"_fmt(num_own_point, num_ene_point)).drawAt(20, advantage_rect.center(), Palette::White);
 
 	Rect Turn_rect = Rect{ 660, 270, 310, 50 }.draw(Palette::Darkorange);
-	Rect{ 660, 270, 310*current.now_turn/current.turns, 50 }.draw(Palette::Darkcyan);
-	ui_font(U"TURN: {} / {}"_fmt(current.now_turn,current.turns)).drawAt(20, Turn_rect.center(), Palette::White);
+	Rect{ 660, 270, 310 * current.now_turn / current.turns, 50 }.draw(Palette::Darkcyan);
+	ui_font(U"TURN: {} / {}"_fmt(current.now_turn, current.turns)).drawAt(20, Turn_rect.center(), Palette::White);
 
 }
 
@@ -311,8 +283,6 @@ void POST(situa& situa, Grid<int>& BreakUI, Grid<int>& CreateUI) {
 	const URL query_url = current.url + U"/" + ToString(current.id) + U"?token=" + current.token;
 	JSON json;
 	json[U"turn"] = current.now_turn + 1;
-
-	uint64 test = Time::GetMillisecSinceEpoch();
 	solver_dijkstra(situa, BreakUI, CreateUI, json);
 	Console << U"solve" << Time::GetMillisecSinceEpoch() - start;
 	json.save(U"posted.json");
@@ -339,7 +309,7 @@ void Main()
 	Array<Texture> emoji = {//盤面表現の絵文字
 		Texture{ U"🦀"_emoji } ,Texture{U"🐟"_emoji },
 		Texture{U"💧"_emoji} ,Texture{U"🟦"_emoji},
-		Texture{U"🟥"_emoji},Texture{U"🏯"_emoji},Texture{U"⚒️"_emoji}};
+		Texture{U"🟥"_emoji},Texture{U"🏯"_emoji},Texture{U"⚒️"_emoji} };
 
 	situa situa(0, 0);//試合状況の初期状態 とりあえずW,H=0,0
 
@@ -350,13 +320,17 @@ void Main()
 		GetInfo(situa);
 		score_OpenedBox(situa);
 		uint64 turn_start_sec = Time::GetMillisecSinceEpoch();//何秒経ったか記録する
+		if ((current.first == true && current.now_turn % 2 == 0) || (current.first == false && current.now_turn % 2 == 1))
+			Scene::SetBackground(Color{ 50,50,100 });
+		else
+			Scene::SetBackground(Color{ 100,50,50 });
 		while (System::Update())
 		{
 			Visualizer(situa, emoji, BreakUI, CreateUI, ui_font);
 
 			//自手の時はsolverのため早めに終わる
 			if ((current.first == true && current.now_turn % 2 == 0) || (current.first == false && current.now_turn % 2 == 1)) {
-				if (Time::GetMillisecSinceEpoch() - turn_start_sec > current.turn_sec * 1000UL - 1000UL)//時間要調整
+				if (Time::GetMillisecSinceEpoch() - turn_start_sec > current.turn_sec * 1000UL - 300UL)//時間要調整
 					break;
 			}
 			//自手じゃないので遅めに終わる ブラウザの更新と同期してるか確認しろ
@@ -472,67 +446,66 @@ void GetInfo(situa& Situa) {
 						Situa.boxes[y][x].bld = eneWall;
 				}
 			}
-			//開放された陣地のチェック
-			//応急処置 あとでちゃんとやれ
-			Situa.eneborder = Grid<bool>(current.w, current.h, 0);
-
 			Console << U"ターン取得成功";
 		}
 		else { Console << U"ターン疎通失敗"; }
 	}
 }
 
-void DFS(situa&situa,Grid<bool>&visited,int y,int x,int wall) {
+void DFS(situa& situa, Grid<bool>& visited, int y, int x, int wall) {
 	if (visited[y][x])return;
 	visited[y][x] = true;
 
 	for (Point p : dxdy4) {
 		int ny = y + p.y, nx = x + p.x;
-		if (ny < 0 || ny >= current.h + 2 || nx < 0 || nx >= current.w + 2||visited[ny][nx])continue;
-		if (OK(ny-1, nx-1)) {
-			if(situa.boxes[ny-1][nx-1].bld!=wall)
-				DFS(situa, visited, ny, nx,wall);
+		if (ny < 0 || ny >= current.h + 2 || nx < 0 || nx >= current.w + 2 || visited[ny][nx])continue;
+		if (OK(ny - 1, nx - 1)) {
+			if (situa.boxes[ny - 1][nx - 1].bld != wall)
+				DFS(situa, visited, ny, nx, wall);
 		}
 		else {
-				DFS(situa,visited,ny,nx,wall);
+			DFS(situa, visited, ny, nx, wall);
 		}
 	}
 }
 
-void score_OpenedBox(situa &situa) {
-	uint64 start = Time::GetMillisecSinceEpoch();
+void score_OpenedBox(situa& situa) {
 	current.num_enearea = 0; current.num_enecastle = 0; current.num_enewall = 0;
 	current.num_ownarea = 0; current.num_owncastle = 0; current.num_ownwall = 0;
 
 	//DFS
 	Grid<bool>visited_own(current.w + 2, current.h + 2, 0);
-	DFS(situa, visited_own, 0, 0,ownWall);
+	DFS(situa, visited_own, 0, 0, ownWall);
 	Grid<bool>visited_ene(current.w + 2, current.h + 2, 0);
 	DFS(situa, visited_ene, 0, 0, eneWall);
+
+	situa.eneborder = Grid<bool>(current.w, current.h, 0);
+	situa.ownborder = Grid<bool>(current.w, current.h, 0);
 	for (int i = 0; i < current.h; i++) {
 		for (int j = 0; j < current.w; j++) {
-			if (situa.boxes[i][j].bld==ownWall) {
+			if (situa.boxes[i][j].bld == ownWall) {
 				current.num_ownwall++;
+				situa.ownborder[i][j] = visited_own[i + 2][j + 1] || visited_own[i + 1][j + 2] || visited_own[i][j + 1] || visited_own[i + 1][j];
 			}
-			if (situa.boxes[i][j].bld==eneWall) {
+			if (situa.boxes[i][j].bld == eneWall) {
 				current.num_enewall++;
+				situa.eneborder[i][j] = visited_ene[i + 2][j + 1] || visited_ene[i + 1][j + 2] || visited_ene[i][j + 1] || visited_ene[i + 1][j];
 			}
 			if (situa.boxes[i][j].own) {
 				current.num_ownarea++;
 				situa.boxes[i][j].isClose = !visited_own[i + 1][j + 1];
-				if(situa.boxes[i][j].bld==castle)
+				if (situa.boxes[i][j].bld == castle)
 					current.num_owncastle++;
 
 			}
 			if (situa.boxes[i][j].ene) {
 				current.num_enearea++;
-				situa.boxes[i][j].isClose = !visited_own[i + 1][j + 1];
+				situa.boxes[i][j].isClose = !visited_ene[i + 1][j + 1];
 				if (situa.boxes[i][j].bld == castle)
 					current.num_enecastle++;
 			}
 		}
 	}
-	Console << Time::GetMillisecSinceEpoch() - start;
 }
 //dijkstra のreturnが複雑なので構造体に
 struct dij_res {
@@ -589,7 +562,7 @@ dij_res own_dijkstra(situa& situa, Grid<double>& dist, Grid<bool>& footprint, Gr
 			if (situa.boxes[toy][tox].isPond == true)continue;
 
 			if (situa.boxes[toy][tox].bld == eneWall) {
-				if (situa.eneborder[toy][tox] == false&&false)continue;/*破壊が敵利益となる*/
+				if (situa.eneborder[toy][tox] == false)continue;/*破壊が敵利益となる*/
 				else cost = 1 / 1.0 + 1 / 2.0 + 1 / 4.0 + 1 / 8.0;//=1.875<2
 			}
 			else cost = 1.0;
@@ -631,6 +604,9 @@ struct action {
 };
 
 void solver_dijkstra(situa& Situa, Grid<int32>& Break, Grid<int32>& Create, JSON& json) {
+
+	//目標がない関係でものすごく時間がかかる時は強制break (実装予定)
+
 	Array<int32>perm(current.mason); for (int i = 0; i < current.mason; i++)perm[i] = i;
 	Array<action>max_hands(current.mason, { 0,0 }); double max_hands_val = -10000;
 
@@ -654,7 +630,6 @@ void solver_dijkstra(situa& Situa, Grid<int32>& Break, Grid<int32>& Create, JSON
 			//見つけることが出来なかった場合には-1のpairを返す
 			dij_res res = own_dijkstra(inSitua, dist, footprint, ene_pos, own_pos, y, x, inBreak, inCreate);
 			Point from = res.from;
-			//Console << res.to.y<<U" " << res.to.x;
 
 			//事故って建築,破壊対象がない状態になってなければ
 			if (res.from.x != -1) {
